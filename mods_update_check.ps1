@@ -25,11 +25,6 @@ function Try-ParseDate($s) {
     try { return [datetime]::Parse($s) } catch { return $null }
 }
 
-function Normalize-ModName($s) {
-    if (-not $s) { return "" }
-    return ($s.ToLowerInvariant() -replace "[^a-z0-9]+", "")
-}
-
 foreach ($mod in $mods) {
     $mod = $mod.Trim()
     if (-not $mod) { continue }
@@ -44,19 +39,11 @@ foreach ($mod in $mods) {
 
     # --- Modrinth search ---
     try {
-        $mrUrl = "https://api.modrinth.com/v2/search?query=$nameEsc&limit=10"
+        $mrUrl = "https://api.modrinth.com/v2/search?query=$nameEsc&limit=1"
         $mr = Invoke-RestMethod -Uri $mrUrl -Method GET -ErrorAction Stop
 
         if ($mr.hits.Count -gt 0) {
-            $normalizedGuess = Normalize-ModName $nameGuess
-            $mrHit = $mr.hits | Where-Object {
-                (Normalize-ModName $_.title) -eq $normalizedGuess -or
-                (Normalize-ModName $_.slug) -eq $normalizedGuess
-            } | Select-Object -First 1
-
-            if (-not $mrHit) { $mrHit = $mr.hits[0] }
-
-            $mrDate = Try-ParseDate $mrHit.date_modified
+            $mrDate = Try-ParseDate $mr.hits[0].date_modified
             $mrSource = "Modrinth"
         }
     } catch {
@@ -67,19 +54,11 @@ foreach ($mod in $mods) {
     if ($cfApiKey) {
         try {
             # search
-            $cfSearchUrl = "https://api.curseforge.com/v1/mods/search?gameId=432&classId=6&searchFilter=$nameEsc&pageSize=10"
+            $cfSearchUrl = "https://api.curseforge.com/v1/mods/search?gameId=432&classId=6&searchFilter=$nameEsc&pageSize=1"
             $cfSearch = Invoke-RestMethod -Uri $cfSearchUrl -Headers $cfHeaders -Method GET -ErrorAction Stop
 
             if ($cfSearch.data.Count -gt 0) {
-                $normalizedGuess = Normalize-ModName $nameGuess
-                $cfHit = $cfSearch.data | Where-Object {
-                    (Normalize-ModName $_.name) -eq $normalizedGuess -or
-                    (Normalize-ModName $_.slug) -eq $normalizedGuess
-                } | Select-Object -First 1
-
-                if (-not $cfHit) { $cfHit = $cfSearch.data[0] }
-
-                $modId = $cfHit.id
+                $modId = $cfSearch.data[0].id
 
                 # get mod info (dateModified is reliable)
                 $cfModUrl = "https://api.curseforge.com/v1/mods/$modId"
