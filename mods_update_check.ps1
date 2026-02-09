@@ -1,16 +1,33 @@
-$mods = Get-Content "liste_mods.txt"
+[CmdletBinding()]
+param(
+    [string]$ModsListPath = "liste_mods.txt",
+    [string]$OutputPath = "mods_sorted_by_update.csv"
+)
+
+if (-not (Test-Path -Path $ModsListPath)) {
+    Write-Error "Mods list file not found: $ModsListPath"
+    exit 1
+}
+
+$mods = Get-Content $ModsListPath -ErrorAction Stop
 $result = @()
 
 # CurseForge: gameId 432 = Minecraft
 $cfApiKey = $env:CF_API_KEY
+if (-not $cfApiKey) {
+    $cfApiKey = Read-Host -Prompt "Enter CurseForge API key (press Enter to skip)"
+}
 $cfHeaders = @{}
 if ($cfApiKey) { $cfHeaders["x-api-key"] = $cfApiKey }
+$warnedNoApiKey = $false
 
 function Try-ParseDate($s) {
     try { return [datetime]::Parse($s) } catch { return $null }
 }
 
 foreach ($mod in $mods) {
+    $mod = $mod.Trim()
+    if (-not $mod) { continue }
     # Nom “approximatif” : on retire la version à partir du premier "-<chiffre>"
     $nameGuess = ($mod -replace "\.jar$", "") -replace "-\d.*$", ""
     $nameEsc = [uri]::EscapeDataString($nameGuess)
@@ -23,14 +40,14 @@ foreach ($mod in $mods) {
     # --- Modrinth search ---
     try {
         $mrUrl = "https://api.modrinth.com/v2/search?query=$nameEsc&limit=1"
-        $mr = Invoke-RestMethod -Uri $mrUrl -Method GET
+        $mr = Invoke-RestMethod -Uri $mrUrl -Method GET -ErrorAction Stop
 
         if ($mr.hits.Count -gt 0) {
             $mrDate = Try-ParseDate $mr.hits[0].date_modified
             $mrSource = "Modrinth"
         }
     } catch {
-        $mrSource = "ERROR"
+        $mrSource = "ERROR: $($_.Exception.Message)"
     }
 
     # --- CurseForge search (requires API key) ---
@@ -38,22 +55,26 @@ foreach ($mod in $mods) {
         try {
             # search
             $cfSearchUrl = "https://api.curseforge.com/v1/mods/search?gameId=432&classId=6&searchFilter=$nameEsc&pageSize=1"
-            $cfSearch = Invoke-RestMethod -Uri $cfSearchUrl -Headers $cfHeaders -Method GET
+            $cfSearch = Invoke-RestMethod -Uri $cfSearchUrl -Headers $cfHeaders -Method GET -ErrorAction Stop
 
             if ($cfSearch.data.Count -gt 0) {
                 $modId = $cfSearch.data[0].id
 
                 # get mod info (dateModified is reliable)
                 $cfModUrl = "https://api.curseforge.com/v1/mods/$modId"
-                $cfMod = Invoke-RestMethod -Uri $cfModUrl -Headers $cfHeaders -Method GET
+                $cfMod = Invoke-RestMethod -Uri $cfModUrl -Headers $cfHeaders -Method GET -ErrorAction Stop
 
                 $cfDate = Try-ParseDate $cfMod.data.dateModified
                 $cfSource = "CurseForge"
             }
         } catch {
-            $cfSource = "ERROR"
+            $cfSource = "ERROR: $($_.Exception.Message)"
         }
     } else {
+        if (-not $warnedNoApiKey) {
+            Write-Warning "CF_API_KEY not set. CurseForge lookups will be skipped."
+            $warnedNoApiKey = $true
+        }
         $cfSource = "NO_API_KEY"
     }
 
@@ -87,6 +108,6 @@ foreach ($mod in $mods) {
 # Tri: plus ancien -> plus récent (les vides en haut)
 $result |
     Sort-Object @{ Expression = { if ($_.LastUpdate) { [datetime]$_.LastUpdate } else { [datetime]"1900-01-01" } } } |
-    Export-Csv "mods_sorted_by_update.csv" -NoTypeInformation -Encoding UTF8
+    Export-Csv $OutputPath -NoTypeInformation -Encoding UTF8
 
-Write-Host "OK -> mods_sorted_by_update.csv"
+Write-Host "OK -> $OutputPath"
