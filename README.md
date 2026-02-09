@@ -19,8 +19,16 @@ It helps identify:
 
 ## Usage
 1. Create a text file containing your installed mods (one `.jar` filename per line)
-2. Run the PowerShell script
-3. Review the generated `mods_sorted_by_update.csv`
+2. Run the PowerShell script (optionally pass paths)
+3. Review the generated CSV report
+
+### Example
+```powershell
+.\mods_update_check.ps1 -ModsListPath "liste_mods.txt" -OutputPath "mods_sorted_by_update.csv"
+```
+
+Set your CurseForge API key in the `CF_API_KEY` environment variable before running,
+or enter it when prompted.
 
 ## Data Sources
 - Modrinth API
